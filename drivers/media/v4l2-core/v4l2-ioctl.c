@@ -1372,7 +1372,7 @@ static int v4l_enum_fmt(const struct v4l2_ioctl_ops *ops,
 		ret = ops->vidioc_enum_fmt_meta_cap(file, fh, arg);
 		break;
 	case V4L2_BUF_TYPE_META_OUTPUT:
-		if (unlikely(!is_tx || !is_vid || !ops->vidioc_enum_fmt_meta_out))
+		if (unlikely(!ops->vidioc_enum_fmt_meta_out))
 			break;
 		ret = ops->vidioc_enum_fmt_meta_out(file, fh, arg);
 		break;
@@ -1455,7 +1455,7 @@ static int v4l_g_fmt(const struct v4l2_ioctl_ops *ops,
 	case V4L2_BUF_TYPE_META_CAPTURE:
 		return ops->vidioc_g_fmt_meta_cap(file, fh, arg);
 	case V4L2_BUF_TYPE_META_OUTPUT:
-		if (unlikely(!is_tx || !is_vid || !ops->vidioc_g_fmt_meta_out))
+		if (unlikely(!ops->vidioc_g_fmt_meta_out))
 			break;
 		return ops->vidioc_g_fmt_meta_out(file, fh, arg);
 	}
@@ -1567,7 +1567,7 @@ static int v4l_s_fmt(const struct v4l2_ioctl_ops *ops,
 		CLEAR_AFTER_FIELD(p, fmt.meta);
 		return ops->vidioc_s_fmt_meta_cap(file, fh, arg);
 	case V4L2_BUF_TYPE_META_OUTPUT:
-		if (unlikely(!is_tx || !is_vid || !ops->vidioc_s_fmt_meta_out))
+		if (unlikely(!ops->vidioc_s_fmt_meta_out))
 			break;
 		CLEAR_AFTER_FIELD(p, fmt.meta);
 		return ops->vidioc_s_fmt_meta_out(file, fh, arg);
@@ -1659,7 +1659,7 @@ static int v4l_try_fmt(const struct v4l2_ioctl_ops *ops,
 		CLEAR_AFTER_FIELD(p, fmt.meta);
 		return ops->vidioc_try_fmt_meta_cap(file, fh, arg);
 	case V4L2_BUF_TYPE_META_OUTPUT:
-		if (unlikely(!is_tx || !is_vid || !ops->vidioc_try_fmt_meta_out))
+		if (unlikely(!ops->vidioc_try_fmt_meta_out))
 			break;
 		CLEAR_AFTER_FIELD(p, fmt.meta);
 		return ops->vidioc_try_fmt_meta_out(file, fh, arg);
