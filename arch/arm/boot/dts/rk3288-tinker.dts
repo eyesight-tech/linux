@@ -134,10 +134,42 @@
 		startup-delay-us = <100000>;
 		vin-supply = <&vcc_io>;
 	};
+
+	vcc_cam: vcc-camera {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_cam";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_pwr>;
+		enable-active-high;
+		gpio = <&gpio2 0 GPIO_ACTIVE_HIGH>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	ext_cam_clk: external-camera-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <25000000>;
+		clock-output-names = "CLK_CAMERA_25MHZ";
+		#clock-cells = <0>;
+	};
 };
 
 &cpu0 {
 	cpu0-supply = <&vdd_cpu>;
+};
+
+&isp {
+	status = "okay";
+
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		isp_mipi_in: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&dphy_rx0_out>;
+		};
+	};
 };
 
 &gmac {
@@ -360,6 +392,20 @@
 
 &i2c2 {
 	status = "okay";
+
+	camera-sensor@10 {
+		compatible = "onnn,ar0144";
+		reg = <0x10>;
+		clocks = <&ext_cam_clk>;
+		status = "okay";
+
+		port {
+			ar0144_out: endpoint {
+				remote-endpoint = <&ar0144_in>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
 };
 
 &i2c5 {
@@ -375,6 +421,36 @@
 	status = "okay";
 
 	sdcard-supply = <&vccio_sd>;
+};
+
+&isp_mmu {
+	status = "okay";
+};
+
+&mipi_phy_rx0 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+
+			ar0144_in: endpoint {
+				remote-endpoint = <&ar0144_out>;
+				data-lanes = <1 2>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+
+			dphy_rx0_out: endpoint {
+				remote-endpoint = <&isp_mipi_in>;
+			};
+		};
+	};
 };
 
 &pinctrl {
@@ -451,6 +527,16 @@
 
 		pwr_3g: pwr-3g {
 			rockchip,pins = <7 8 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	cam_pins {
+		cam_clk: cam-clk {
+			rockchip,pins = <2 11 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		cam_pwr: cam-pwr {
+			rockchip,pins = <2 0 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 };
