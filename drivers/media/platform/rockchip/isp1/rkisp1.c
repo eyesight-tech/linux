@@ -182,6 +182,7 @@ static int rkisp1_config_isp(struct rkisp1_device *dev)
 			signal |= CIF_ISP_ACQ_PROP_HSYNC_LOW;
 	}
 
+	printk("%s: isp_ctrl: %08x signal: %08x\n", __func__, isp_ctrl, signal);
 	writel(isp_ctrl, base + CIF_ISP_CTRL);
 	writel(signal | in_fmt->yuv_seq |
 	       CIF_ISP_ACQ_PROP_BAYER_PAT(in_fmt->bayer_pat) |
@@ -720,6 +721,7 @@ static int rkisp1_isp_sd_set_fmt(struct v4l2_subdev *sd,
 	struct rkisp1_isp_subdev *isp_sd = &isp_dev->isp_sdev;
 	struct v4l2_mbus_framefmt *mf = &fmt->format;
 
+	printk("%s: pad: %u which: %u\n", __func__, fmt->pad, fmt->which);
 	if ((fmt->pad != RKISP1_ISP_PAD_SINK) &&
 	    (fmt->pad != RKISP1_ISP_PAD_SOURCE_PATH))
 		return -EINVAL;
@@ -1074,7 +1076,7 @@ void rkisp1_unregister_isp_subdev(struct rkisp1_device *isp_dev)
 
 void rkisp1_mipi_isr(unsigned int mis, struct rkisp1_device *dev)
 {
-	struct v4l2_device *v4l2_dev = &dev->v4l2_dev;
+	//struct v4l2_device *v4l2_dev = &dev->v4l2_dev;
 	void __iomem *base = dev->base_addr;
 	u32 val;
 
@@ -1108,7 +1110,7 @@ void rkisp1_mipi_isr(unsigned int mis, struct rkisp1_device *dev)
 			dev->isp_sdev.dphy_errctrl_disabled = false;
 		}
 	} else {
-		v4l2_warn(v4l2_dev, "MIPI mis error: 0x%08x\n", mis);
+		//v4l2_warn(v4l2_dev, "MIPI mis error: 0x%08x\n", mis);
 	}
 }
 
