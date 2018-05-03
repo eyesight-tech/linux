@@ -915,9 +915,11 @@ static int rkisp1_isp_sd_s_power(struct v4l2_subdev *sd, int on)
 
 		rkisp1_config_clk(isp_dev);
 	} else {
+#if 0
 		ret = pm_runtime_put(isp_dev->dev);
 		if (ret < 0)
 			return ret;
+#endif
 	}
 
 	return 0;
