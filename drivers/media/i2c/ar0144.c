@@ -137,16 +137,16 @@ static const struct ar0144_reg_value ar0144at_embedded_data_stats[] = {
 };
 
 static const struct ar0144_reg_value ar0144at_auto_exposure[] = {
-	{0x3270, 0x0100},
-	{0x3100, 0x0003},
+	{0x3270, 0x0100}, // LED_FLASH_EN = 1
+	{0x3100, 0x0003}, // AE_ENABLE=1; AUTO_AG_EN=1 (Analog gain); Digital gain disabled
+	{0x311C, 0x0160}, // AE_MAX_EXPOSURE (in rows)
 	{0x311C, 0x0160},
-	{0x311C, 0x0160},
-	{0x3102, 0x5650},
-	{0x3108, 0x0008},
-	{0x310A, 0x0902},
-	{0x310C, 0x1008},
-	{0x310E, 0x1010},
-	{0x3110, 0x0048},
+	{0x3102, 0x5650}, // AE_LUMA_TARGET
+	{0x3108, 0x0008}, // AE_MIN_EV_STEP_REG
+	{0x310A, 0x0902}, // AE_MAX_EV_STEP_REG
+	{0x310C, 0x1008}, // AE_DAMP_OFFSET_REG
+	{0x310E, 0x1010}, // AE_DAMP_GAIN_REG
+	{0x3110, 0x0048}, // AE_DAMP_MAX_REG
 };
 
 static const struct ar0144_reg_value ar0144at_start_stream[] = {
