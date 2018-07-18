@@ -21,6 +21,9 @@
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
+#define AR0144_R301D_IMAGE_ORIENTATION   0x301D
+#define AR0144_R3040_READ_MODE           0x3040
+
 #define AR0144_I2C_ADDR      0x10
 #define AR0144_ID_REG        0x3000
 #define AR0144_ID_VAL        0x1356
@@ -44,6 +47,11 @@ struct ar0144 {
 
 	struct v4l2_ctrl_handler ctrls;
 	struct v4l2_ctrl *link_freq;
+
+	unsigned hflip:1;
+	unsigned vflip:1;
+	unsigned short global_gain;
+	unsigned short exposure;
 
 	bool streaming;
 };
@@ -172,6 +180,24 @@ static int ar0144_write_reg(struct ar0144 *ar0144, u16 reg, u16 val)
 			__func__, ret, reg, val);
 
 	return ret;
+}
+
+static int ar0144_write_reg8(struct ar0144 *ar0144, u16 reg, u8 val)
+{
+    u8 regbuf[3];
+    int ret;
+
+    regbuf[0] = reg >> 8;
+    regbuf[1] = reg & 0xff;
+    regbuf[2] = val;
+
+    ret = i2c_master_send(ar0144->i2c_client, regbuf, 3);
+    if (ret < 0)
+        dev_err(&ar0144->i2c_client->dev,
+            "%s: write reg error %d: reg=%x, val=%x\n",
+            __func__, ret, reg, val);
+
+    return ret;
 }
 
 static int ar0144_read_reg(struct ar0144 *ar0144, u16 reg, u16 *val)
@@ -316,10 +342,14 @@ static int ar0144_get_format(struct v4l2_subdev *sd,
 {
 	struct ar0144 *ar0144 = to_ar0144(sd);
 
+	//printk(KERN_EMERG "which=%d", format->which);
+
 	mutex_lock(&ar0144->lock);
 	format->format = *__ar0144_get_pad_format(ar0144, cfg, format->pad,
 						  format->which);
 	mutex_unlock(&ar0144->lock);
+
+	//printk(KERN_EMERG "format->format.code=%u", format->format.code);
 	return 0;
 }
 
@@ -385,6 +415,20 @@ static int ar0144_get_selection(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static void set_read_mode(struct v4l2_subdev *sd)
+{
+    struct ar0144 *core = to_ar0144(sd);
+    u8 mode = 0x00;
+
+    if (core->hflip)
+        mode |= 0x01;
+
+    if (core->vflip)
+        mode |= 0x02;
+
+    ar0144_write_reg8(core, AR0144_R301D_IMAGE_ORIENTATION, mode);
+}
+
 static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 {
 	struct ar0144 *ar0144 = to_ar0144(subdev);
@@ -415,11 +459,11 @@ static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 	if (ret < 0)
 		goto out;
 
-	ret = ar0144_set_register_array(
-		ar0144, ar0144at_context_b_2x2_binning,
-		ARRAY_SIZE(ar0144at_context_b_2x2_binning));
-	if (ret < 0)
-		goto out;
+	// ret = ar0144_set_register_array(
+	// 	ar0144, ar0144at_context_b_2x2_binning,
+	// 	ARRAY_SIZE(ar0144at_context_b_2x2_binning));
+	// if (ret < 0)
+	// 	goto out;
 
 	ret = ar0144_set_register_array(
 		ar0144, ar0144at_embedded_data_stats,
@@ -429,6 +473,9 @@ static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 
 	ret = ar0144_set_register_array(ar0144, ar0144at_auto_exposure,
 					ARRAY_SIZE(ar0144at_auto_exposure));
+
+    set_read_mode(subdev);
+
 	if (ret < 0)
 		goto out;
 
@@ -439,6 +486,38 @@ out:
 	mutex_unlock(&ar0144->lock);
 	return ret;
 }
+
+static int ar0144_s_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct ar0144 *core =
+		container_of(ctrl->handler, struct ar0144, ctrls);
+	struct v4l2_subdev *sd = &core->sd;
+
+	switch (ctrl->id) {
+	case V4L2_CID_GAIN:
+		core->global_gain = ctrl->val;
+		break;
+	case V4L2_CID_EXPOSURE:
+		core->exposure = ctrl->val;
+		break;
+	case V4L2_CID_HFLIP:
+		core->hflip = ctrl->val;
+		set_read_mode(sd);
+		return 0;
+	case V4L2_CID_VFLIP:
+		core->vflip = ctrl->val;
+		set_read_mode(sd);
+		return 0;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static const struct v4l2_ctrl_ops ar0144_ctrl_ops = {
+	.s_ctrl = ar0144_s_ctrl,
+};
 
 static const struct v4l2_subdev_core_ops ar0144_core_ops = {
 	.s_power = ar0144_s_power,
@@ -577,8 +656,16 @@ static int ar0144_probe(struct i2c_client *client,
 
 	v4l2_ctrl_handler_init(&ar0144->ctrls, 1);
 	ar0144->link_freq = v4l2_ctrl_new_int_menu(&ar0144->ctrls, NULL,
-						   V4L2_CID_LINK_FREQ, 0, 0,
-						   ar0144_link_freq);
+			  V4L2_CID_LINK_FREQ, 0, 0, ar0144_link_freq);
+	v4l2_ctrl_new_std(&ar0144->ctrls, &ar0144_ctrl_ops,
+			  V4L2_CID_GAIN, 0, (1 << 12) - 1 - 0x20, 1, 0x20);
+	v4l2_ctrl_new_std(&ar0144->ctrls, &ar0144_ctrl_ops,
+			  V4L2_CID_EXPOSURE, 0, 2047, 1, 0x01fc);
+	v4l2_ctrl_new_std(&ar0144->ctrls, &ar0144_ctrl_ops,
+			  V4L2_CID_HFLIP, 0, 1, 1, 0);
+	v4l2_ctrl_new_std(&ar0144->ctrls, &ar0144_ctrl_ops,
+			  V4L2_CID_VFLIP, 0, 1, 1, 0);
+
 	if (ar0144->link_freq)
 		ar0144->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 	if (ar0144->ctrls.error) {
