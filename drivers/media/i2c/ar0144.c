@@ -21,8 +21,18 @@
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
-#define AR0144_R301D_IMAGE_ORIENTATION   0x301D
-#define AR0144_R3040_READ_MODE           0x3040
+#define AR0144_CID_CUSTOM_BASE  (V4L2_CID_USER_BASE | 0xf000)
+#define AR0144_CID_AE_ROI       (AR0144_CID_CUSTOM_BASE + 0)
+
+#define AR0144_R3012_COARSE_INTEGRATION_TIME    0x3012
+#define AR0144_R301D_IMAGE_ORIENTATION          0x301D
+#define AR0144_R3040_READ_MODE                  0x3040
+#define AR0144_R3060_ANALOG_GAIN                0x3060
+#define AR0144_R3100_AECTRLREG                  0x3100
+#define AR0144_R3140_AE_ROI_X_START_OFFSET      0x3140
+#define AR0144_R3142_AE_ROI_Y_START_OFFSET      0x3142
+#define AR0144_R3144_AE_ROI_X_SIZE              0x3144
+#define AR0144_R3146_AE_ROI_Y_SIZE              0x3146
 
 #define AR0144_I2C_ADDR      0x10
 #define AR0144_ID_REG        0x3000
@@ -50,8 +60,14 @@ struct ar0144 {
 
 	unsigned hflip:1;
 	unsigned vflip:1;
-	unsigned short global_gain;
-	unsigned short exposure;
+    unsigned ae:1;
+	u16 global_gain;
+	u16 exposure;
+
+    u16 ae_roi_x_start_offset;
+    u16 ae_roi_y_start_offset;
+    u16 ae_roi_x_size;
+    u16 ae_roi_y_size;
 
 	bool streaming;
 };
@@ -140,7 +156,6 @@ static const struct ar0144_reg_value ar0144at_auto_exposure[] = {
 	{0x3270, 0x0100}, // LED_FLASH_EN = 1
 	{0x3100, 0x0003}, // AE_ENABLE=1; AUTO_AG_EN=1 (Analog gain); Digital gain disabled
 	{0x311C, 0x0160}, // AE_MAX_EXPOSURE (in rows)
-	{0x311C, 0x0160},
 	{0x3102, 0x5650}, // AE_LUMA_TARGET
 	{0x3108, 0x0008}, // AE_MIN_EV_STEP_REG
 	{0x310A, 0x0902}, // AE_MAX_EV_STEP_REG
@@ -429,6 +444,41 @@ static void set_read_mode(struct v4l2_subdev *sd)
     ar0144_write_reg8(core, AR0144_R301D_IMAGE_ORIENTATION, mode);
 }
 
+static void set_ae(struct v4l2_subdev *sd)
+{
+    struct ar0144 *core = to_ar0144(sd);
+    u16 val = 0x00;
+
+    if (core->ae)
+        val = 0x03;
+
+    ar0144_write_reg(core, AR0144_R3100_AECTRLREG, val);
+}
+
+static void set_gain(struct v4l2_subdev *sd)
+{
+    struct ar0144 *core = to_ar0144(sd);
+
+    ar0144_write_reg(core, AR0144_R3060_ANALOG_GAIN, core->global_gain);
+}
+
+static void set_exposure(struct v4l2_subdev *sd)
+{
+    struct ar0144 *core = to_ar0144(sd);
+
+    ar0144_write_reg(core, AR0144_R3012_COARSE_INTEGRATION_TIME, core->exposure);
+}
+
+static void set_ae_roi(struct v4l2_subdev *sd)
+{
+    struct ar0144 *core = to_ar0144(sd);
+
+    ar0144_write_reg(core, AR0144_R3140_AE_ROI_X_START_OFFSET , core->ae_roi_x_start_offset);
+    ar0144_write_reg(core, AR0144_R3142_AE_ROI_Y_START_OFFSET, core->ae_roi_y_start_offset);
+    ar0144_write_reg(core, AR0144_R3144_AE_ROI_X_SIZE, core->ae_roi_x_size);
+    ar0144_write_reg(core, AR0144_R3146_AE_ROI_Y_SIZE, core->ae_roi_y_size);
+}
+
 static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 {
 	struct ar0144 *ar0144 = to_ar0144(subdev);
@@ -475,6 +525,9 @@ static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 					ARRAY_SIZE(ar0144at_auto_exposure));
 
     set_read_mode(subdev);
+    set_ae(subdev);
+    set_gain(subdev);
+    set_exposure(subdev);
 
 	if (ret < 0)
 		goto out;
@@ -494,11 +547,17 @@ static int ar0144_s_ctrl(struct v4l2_ctrl *ctrl)
 	struct v4l2_subdev *sd = &core->sd;
 
 	switch (ctrl->id) {
+    case V4L2_CID_EXPOSURE_AUTO:
+        core->ae = (ctrl->val == V4L2_EXPOSURE_AUTO) ? 1 : 0;
+        set_ae(sd);
+        break;        
 	case V4L2_CID_GAIN:
 		core->global_gain = ctrl->val;
+        set_gain(sd);
 		break;
 	case V4L2_CID_EXPOSURE:
 		core->exposure = ctrl->val;
+        set_exposure(sd);
 		break;
 	case V4L2_CID_HFLIP:
 		core->hflip = ctrl->val;
@@ -508,6 +567,13 @@ static int ar0144_s_ctrl(struct v4l2_ctrl *ctrl)
 		core->vflip = ctrl->val;
 		set_read_mode(sd);
 		return 0;
+    case AR0144_CID_AE_ROI:
+        core->ae_roi_x_start_offset = ctrl->p_cur.p_u16[0];
+        core->ae_roi_y_start_offset = ctrl->p_cur.p_u16[1];
+        core->ae_roi_x_size = ctrl->p_cur.p_u16[2];
+        core->ae_roi_y_size = ctrl->p_cur.p_u16[3];
+        set_ae_roi(sd);
+        return 0;
 	default:
 		return -EINVAL;
 	}
@@ -516,7 +582,19 @@ static int ar0144_s_ctrl(struct v4l2_ctrl *ctrl)
 }
 
 static const struct v4l2_ctrl_ops ar0144_ctrl_ops = {
-	.s_ctrl = ar0144_s_ctrl,
+    .s_ctrl = ar0144_s_ctrl,
+};
+
+static const struct v4l2_ctrl_config ar0144_ae_roi = {
+    .ops = &ar0144_ctrl_ops,
+    .id = AR0144_CID_AE_ROI,
+    .name = "AR0144 AE ROI",
+    .type = V4L2_CTRL_TYPE_U16,
+    .def = 0x0,
+    .min = 0x0,
+    .max = 0x1280,
+    .step = 1,
+    .dims = { 4 },
 };
 
 static const struct v4l2_subdev_core_ops ar0144_core_ops = {
@@ -657,14 +735,17 @@ static int ar0144_probe(struct i2c_client *client,
 	v4l2_ctrl_handler_init(&ar0144->ctrls, 1);
 	ar0144->link_freq = v4l2_ctrl_new_int_menu(&ar0144->ctrls, NULL,
 			  V4L2_CID_LINK_FREQ, 0, 0, ar0144_link_freq);
+    v4l2_ctrl_new_std_menu(&ar0144->ctrls, &ar0144_ctrl_ops,
+              V4L2_CID_EXPOSURE_AUTO, V4L2_EXPOSURE_MANUAL, 0, V4L2_EXPOSURE_AUTO);    
 	v4l2_ctrl_new_std(&ar0144->ctrls, &ar0144_ctrl_ops,
-			  V4L2_CID_GAIN, 0, (1 << 12) - 1 - 0x20, 1, 0x20);
+			  V4L2_CID_GAIN, 0, 0x40, 1, 0x0E);
 	v4l2_ctrl_new_std(&ar0144->ctrls, &ar0144_ctrl_ops,
-			  V4L2_CID_EXPOSURE, 0, 2047, 1, 0x01fc);
+			  V4L2_CID_EXPOSURE, 0, 0x01CF, 1, 0x0160);
 	v4l2_ctrl_new_std(&ar0144->ctrls, &ar0144_ctrl_ops,
 			  V4L2_CID_HFLIP, 0, 1, 1, 0);
 	v4l2_ctrl_new_std(&ar0144->ctrls, &ar0144_ctrl_ops,
 			  V4L2_CID_VFLIP, 0, 1, 1, 0);
+    v4l2_ctrl_new_custom(&ar0144->ctrls, &ar0144_ae_roi, NULL);
 
 	if (ar0144->link_freq)
 		ar0144->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
